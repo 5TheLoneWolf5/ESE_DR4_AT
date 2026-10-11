@@ -40,13 +40,17 @@ public class Contrato {
         if (valor == null || valor.signum() <= 0) throw new IllegalArgumentException("Valor deve ser positivo");
 
         UUID idContrato = UUID.randomUUID();
-        UUID correlationId = CorrelationId.getCorrelationIdAsUUID();
+        UUID eventId = UUID.randomUUID();
+        String correlationId = CorrelationId.getCorrelationId();
+        if (correlationId == null || correlationId.isBlank()) {
+            correlationId = UUID.randomUUID().toString();
+        }
 
         var contrato = new Contrato(idContrato, clienteId, freelancerId, titulo.trim(), valor,
                 StatusContrato.ATIVO, Instant.now());
 
         contrato.domainEvents.add(
-                new ContratoCriado(correlationId, Instant.now(), idContrato, clienteId, freelancerId, titulo, valor)
+                new ContratoCriado(eventId, Instant.now(), idContrato, clienteId, freelancerId, titulo.trim(), valor, correlationId)
         );
 
         return contrato;
@@ -60,19 +64,25 @@ public class Contrato {
     public void registrarEntrega() {
         if (status != StatusContrato.ATIVO) throw new IllegalStateException("Somente contratos ativos recebem entrega");
 
-        UUID correlationId = CorrelationId.getCorrelationIdAsUUID();
+        String correlationId = CorrelationId.getCorrelationId();
+        if (correlationId == null || correlationId.isBlank()) {
+            correlationId = UUID.randomUUID().toString();
+        }
         status = StatusContrato.ENTREGA_REGISTRADA;
 
-        domainEvents.add(new EntregaRegistrada(correlationId, Instant.now(), this.id));
+        domainEvents.add(new EntregaRegistrada(UUID.randomUUID(), Instant.now(), this.id, this.clienteId, this.freelancerId, correlationId));
     }
 
     public void concluir() {
         if (status != StatusContrato.ENTREGA_REGISTRADA) throw new IllegalStateException("A entrega precisa estar registrada");
 
-        UUID correlationId = CorrelationId.getCorrelationIdAsUUID();
+        String correlationId = CorrelationId.getCorrelationId();
+        if (correlationId == null || correlationId.isBlank()) {
+            correlationId = UUID.randomUUID().toString();
+        }
         status = StatusContrato.CONCLUIDO;
 
-        domainEvents.add(new ContratoConcluido(correlationId, Instant.now(), this.id));
+        domainEvents.add(new ContratoConcluido(UUID.randomUUID(), Instant.now(), this.id, this.clienteId, this.freelancerId, this.valor, correlationId));
     }
 
     public void cancelar() {

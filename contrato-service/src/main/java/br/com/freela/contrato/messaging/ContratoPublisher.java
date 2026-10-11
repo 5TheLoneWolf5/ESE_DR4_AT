@@ -8,7 +8,6 @@ import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 @Component
@@ -27,12 +26,26 @@ public class ContratoPublisher {
     }
 
     public CompletableFuture<SendResult<String, String>> publicarEvento(DomainEvent evento) {
-        String id = evento.eventId().toString();
+        String eventId = evento.eventId().toString();
+        String partitionKey = evento.contratoId().toString();
         try {
             String json = objectMapper.writeValueAsString(evento);
-            return kafkaTemplate.send(evento.eventType(), id, json);
+            log.info("contrato.publicar.inicio eventType={} eventId={} contratoId={} correlationId={}",
+                    evento.eventType(), eventId, partitionKey, evento.correlationId());
+            return kafkaTemplate.send(evento.eventType(), partitionKey, json)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            log.error("contrato.publicar.falha eventType={} eventId={} contratoId={} erro={}",
+                                    evento.eventType(), eventId, partitionKey, ex.getMessage());
+                        } else {
+                            log.info("contrato.publicar.sucesso eventType={} eventId={} contratoId={} partition={} offset={}",
+                                    evento.eventType(), eventId, partitionKey,
+                                    result.getRecordMetadata().partition(), result.getRecordMetadata().offset());
+                        }
+                    });
         } catch (Exception e) {
-            log.warn("Não foi possivel publicar evento no Kafka: {}, {}", id, e.getMessage());
+            log.error("contrato.publicar.erro eventType={} eventId={} contratoId={} erro={}",
+                    evento.eventType(), eventId, partitionKey, e.getMessage());
             throw new RuntimeException("Erro ao serializar evento: ", e);
         }
     }
