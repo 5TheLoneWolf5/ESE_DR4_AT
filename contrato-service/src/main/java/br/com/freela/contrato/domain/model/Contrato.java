@@ -1,7 +1,11 @@
 package br.com.freela.contrato.domain.model;
 
+import br.com.freela.contrato.domain.event.ContratoConcluido;
 import br.com.freela.contrato.domain.event.ContratoCriado;
+import br.com.freela.contrato.domain.event.EntregaRegistrada;
 import br.com.freela.contrato.domain.shared.DomainEvent;
+import utils.CorrelationId;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -21,17 +25,30 @@ public class Contrato {
 
     private Contrato(UUID id, UUID clienteId, UUID freelancerId, String titulo,
                      BigDecimal valor, StatusContrato status, Instant criadoEm) {
-        this.id = id; this.clienteId = clienteId; this.freelancerId = freelancerId;
-        this.titulo = titulo; this.valor = valor; this.status = status; this.criadoEm = criadoEm;
+        this.id = id;
+        this.clienteId = clienteId;
+        this.freelancerId = freelancerId;
+        this.titulo = titulo;
+        this.valor = valor;
+        this.status = status;
+        this.criadoEm = criadoEm;
     }
 
     public static Contrato criar(UUID clienteId, UUID freelancerId, String titulo, BigDecimal valor) {
         if (clienteId == null || freelancerId == null) throw new IllegalArgumentException("Cliente e freelancer são obrigatórios");
         if (titulo == null || titulo.isBlank()) throw new IllegalArgumentException("Título é obrigatório");
         if (valor == null || valor.signum() <= 0) throw new IllegalArgumentException("Valor deve ser positivo");
-        var contrato = new Contrato(UUID.randomUUID(), clienteId, freelancerId, titulo.trim(), valor,
+
+        UUID idContrato = UUID.randomUUID();
+        UUID correlationId = CorrelationId.getCorrelationIdAsUUID();
+
+        var contrato = new Contrato(idContrato, clienteId, freelancerId, titulo.trim(), valor,
                 StatusContrato.ATIVO, Instant.now());
-        contrato.domainEvents.add(ContratoCriado.novo(contrato));
+
+        contrato.domainEvents.add(
+                new ContratoCriado(correlationId, Instant.now(), idContrato, clienteId, freelancerId, titulo, valor)
+        );
+
         return contrato;
     }
 
@@ -42,21 +59,42 @@ public class Contrato {
 
     public void registrarEntrega() {
         if (status != StatusContrato.ATIVO) throw new IllegalStateException("Somente contratos ativos recebem entrega");
+
+        UUID correlationId = CorrelationId.getCorrelationIdAsUUID();
         status = StatusContrato.ENTREGA_REGISTRADA;
+
+        domainEvents.add(new EntregaRegistrada(correlationId, Instant.now(), this.id));
     }
+
     public void concluir() {
         if (status != StatusContrato.ENTREGA_REGISTRADA) throw new IllegalStateException("A entrega precisa estar registrada");
+
+        UUID correlationId = CorrelationId.getCorrelationIdAsUUID();
         status = StatusContrato.CONCLUIDO;
+
+        domainEvents.add(new ContratoConcluido(correlationId, Instant.now(), this.id));
     }
+
     public void cancelar() {
         if (status == StatusContrato.CONCLUIDO) throw new IllegalStateException("Contrato concluído não pode ser cancelado");
         status = StatusContrato.CANCELADO;
     }
+
     public List<DomainEvent> pullDomainEvents() {
-        var copy = List.copyOf(domainEvents); domainEvents.clear(); return copy;
+        var copy = List.copyOf(domainEvents);
+        domainEvents.clear();
+        return copy;
     }
-    public List<DomainEvent> domainEvents() { return Collections.unmodifiableList(domainEvents); }
-    public UUID id(){return id;} public UUID clienteId(){return clienteId;} public UUID freelancerId(){return freelancerId;}
-    public String titulo(){return titulo;} public BigDecimal valor(){return valor;} public StatusContrato status(){return status;}
+
+    public List<DomainEvent> domainEvents() {
+        return Collections.unmodifiableList(domainEvents);
+    }
+
+    public UUID id(){return id;}
+    public UUID clienteId(){return clienteId;}
+    public UUID freelancerId(){return freelancerId;}
+    public String titulo(){return titulo;}
+    public BigDecimal valor(){return valor;}
+    public StatusContrato status(){return status;}
     public Instant criadoEm(){return criadoEm;}
 }

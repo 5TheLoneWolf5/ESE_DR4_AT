@@ -3,6 +3,7 @@ package br.com.freela.contrato.application;
 import br.com.freela.contrato.domain.model.Contrato;
 import br.com.freela.contrato.domain.repository.ContratoRepository;
 import br.com.freela.contrato.domain.shared.DomainEvent;
+import br.com.freela.contrato.messaging.ContratoPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -15,8 +16,12 @@ import java.util.UUID;
 public class ContratoApplicationService {
     private static final Logger log = LoggerFactory.getLogger(ContratoApplicationService.class);
     private final ContratoRepository repository;
+    private final ContratoPublisher publisher;
 
-    public ContratoApplicationService(ContratoRepository repository) { this.repository = repository; }
+    public ContratoApplicationService(ContratoRepository repository, ContratoPublisher publisher) {
+        this.repository = repository;
+        this.publisher = publisher;
+    }
 
     @Transactional
     public Contrato criar(CriarContratoCommand cmd) {
@@ -31,6 +36,7 @@ public class ContratoApplicationService {
         // Os eventos existem no Aggregate, mas ainda NÃO são publicados no Kafka.
         // O aluno deverá implementar a estratégia de publicação/mensagens transacionais.
         for (DomainEvent event : contrato.pullDomainEvents()) {
+            publisher.publicarEvento(event);
             log.info("contrato.evento.pendente contratoId={} eventId={} eventType={} occurredAt={}",
                     contrato.id(), event.eventId(), event.eventType(), event.occurredAt());
         }
@@ -38,6 +44,42 @@ public class ContratoApplicationService {
         log.info("contrato.criacao.sucesso contratoId={} clienteId={} freelancerId={} status={}",
                 salvo.id(), salvo.clienteId(), salvo.freelancerId(), salvo.status());
         return salvo;
+    }
+
+    @Transactional
+    public void registrarEntrega(UUID id) {
+        log.info("contrato.entrega.inicio contratoId={}", id);
+
+        Contrato contrato = buscar(id);
+        contrato.registrarEntrega();
+
+        Contrato salvo = repository.salvar(contrato);
+
+        for (DomainEvent event : contrato.pullDomainEvents()) {
+            publisher.publicarEvento(event);
+            log.info("contrato.evento.pendente contratoId={} eventId={} eventType={} occurredAt={}",
+                    contrato.id(), event.eventId(), event.eventType(), event.occurredAt());
+        }
+
+        log.info("contrato.entrega.sucesso contratoId={} status={}", salvo.id(), salvo.status());
+    }
+
+    @Transactional
+    public void concluir(UUID id) {
+        log.info("contrato.conclusao.inicio contratoId={}", id);
+
+        Contrato contrato = buscar(id);
+        contrato.concluir();
+
+        Contrato salvo = repository.salvar(contrato);
+
+        for (DomainEvent event : contrato.pullDomainEvents()) {
+            publisher.publicarEvento(event);
+            log.info("contrato.evento.pendente contratoId={} eventId={} eventType={} occurredAt={}",
+                    contrato.id(), event.eventId(), event.eventType(), event.occurredAt());
+        }
+
+        log.info("contrato.conclusao.sucesso contratoId={} status={}", salvo.id(), salvo.status());
     }
 
     @Transactional(readOnly = true)
